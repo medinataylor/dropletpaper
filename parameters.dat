@@ -1,0 +1,6 @@
+-1  : thickness of eutectic lamells in cm small when no liquid remains, e.g. 50E-7 cm, -1: take the thickness of shells
+1.1  : gas phase ventilation factors (always >=1 ), 1: molecular diffusion only
+5E-4 :      distance between solid shells in cm, 50E-5 - 5000E-5 cm
+20E-7  minimun thickness
+0
+3
