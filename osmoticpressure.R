@@ -55,13 +55,21 @@ lineplots <- function(df, flatten_after_max = FALSE, extend_to = NULL) {
     summarize(
       wa = mean(V3, na.rm = TRUE),
       wa_sd = sd(V3, na.rm = TRUE),
-      .groups = "drop") %>%
-    mutate(osmotic = (-r * t) / mw * log(wa) / 101325 * 0.1,
       
-      # propagate SD to osmotic
-      osmotic_sd = abs((-r * t) / mw / 101325 * 0.1 * (wa_sd / wa)))
+      na_molality = mean(V22, na.rm = TRUE),
+      na_molality_sd = sd(V22, na.rm = TRUE),
+      
+      k_molality = mean(V25, na.rm = TRUE),
+      k_molality_sd = sd(V25, na.rm = TRUE),
+      
+      .groups = "drop"
+    ) %>%
+    mutate(
+      osmotic = (-r * t) / mw * log(wa) / 101325 * 0.1,
+      osmotic_sd = abs((-r * t) / mw / 101325 * 0.1 * (wa_sd / wa))
+    )
   
-  # for the ones that cannot be calculated to the end of the experiment time
+  # keep your flatten logic unchanged
   if (flatten_after_max) {
     max_time <- df_summary$time[which.max(df_summary$osmotic)]
     max_osmotic <- max(df_summary$osmotic)
@@ -75,6 +83,8 @@ lineplots <- function(df, flatten_after_max = FALSE, extend_to = NULL) {
         time = extra_times,
         wa = NA_real_,
         wa_sd = NA_real_,
+        na_molality = NA_real_,
+        na_molality_sd = NA_real_,
         osmotic = max_osmotic,
         osmotic_sd = 0
       ))
@@ -106,7 +116,7 @@ fit_model <- function(df) {
 # plots the linear models
 plot_decay <- function(df, color, show_y = TRUE) {
   ggplot(df, aes(dpidt, log)) +
-    geom_point(aes(shape = Media), color = color, size = 5, alpha = 0.5) +
+    geom_point(aes(shape = Media), color = color, size = 6, alpha = 0.5) +
     geom_errorbar(aes(ymin = log - sd, ymax = log + sd), width = 2) +
     geom_smooth(method = "lm", formula = y ~ 0 + x,
                 se = TRUE, linetype = "dashed",
@@ -122,24 +132,29 @@ plot_decay <- function(df, color, show_y = TRUE) {
     theme(text = element_text(size = 22))
 }
 
-# plots the predicted bacteria concentrations
-bacteria_predict <- function(df, step, coeff) {
+bacteria_predict <- function(df, step, coeff, threshold = 5) {
+  
   df %>%
     select(time, osmotic) %>%
     arrange(time) %>%
+    
     mutate(target = round(time / step) * step) %>%
     group_by(target) %>%
     slice(which.min(abs(time - target))) %>%
     ungroup() %>%
+    
     mutate(
-      slope = lag(osmotic) - osmotic,
-      decay = -(as.numeric(coeff) * slope),
-      decay = replace_na(decay, 0),
-      log = cumsum(decay)) %>%
-    mutate(
-      flat = log[which.min(abs(time - cutoff_time))],
-      log = ifelse(time >= cutoff_time, flat, log)) %>%
-    select(-flat)
+      slope = replace_na(lag(osmotic) - osmotic, 0),
+      
+      # ✅ ONLY change: per-row threshold, no flattening
+      decay = if_else(
+        abs(slope) > threshold,
+        -(coeff * slope),
+        0
+      ),
+      
+      log = cumsum(decay)
+    )
 }
 
 
@@ -165,6 +180,13 @@ files <- list(
 )
 
 combined <- map(files, process_data)
+
+ranges <- map(combined, ~ 
+                summarise(.x, across(everything(),
+                                     ~ paste(range(.x, na.rm = TRUE), collapse = " to ")))
+)
+
+ranges
 
 # runs the lineplot list for all of the data
 lineplots_list <- imap(combined, ~{
@@ -222,7 +244,7 @@ coeff_main <- fit_model(decay)
 coeff_sep  <- fit_model(decay_sep)
 
 # generates Figure 2A, 2B
-fitplot     <- plot_decay(decay, "darkred", TRUE)
+fitplot     <- plot_decay(decay, "darkgreen", TRUE)
 fitplot_sep <- plot_decay(decay_sep, "#0045A0", FALSE)
 
 combinedfits <- fitplot | fitplot_sep
@@ -239,21 +261,161 @@ bacteria_pbs40 <- bacteria_predict(lineplots_list$pbs40, time_step, coeff_sep)
 
 # generate the plots for figure 3
 p_osm_all <- bind_rows(lineplots_list, .id = "dataset") %>%
-  ggplot(aes(time, osmotic, color = dataset, fill = dataset)) +
+  ggplot(aes(time, wa, color = dataset, fill = dataset)) +
   
-  geom_ribbon(aes(ymin = osmotic - osmotic_sd,
-                  ymax = osmotic + osmotic_sd),
+  geom_ribbon(aes(ymin = wa - wa_sd,
+                  ymax = wa + wa_sd),
               alpha = 0.15, color = NA) +
   geom_line(linewidth = 1.1) +
   labs(
     x = "time (min)",
-    y = bquote(Pi~(MPa)),
+    y = bquote(a[w]),
     color = "Dataset",
     fill = "Dataset"
   ) +
-  
   scale_x_continuous(expand = c(0, 0)) +
-  xlim(0, 120) +
+  xlim(0, 50) +
   theme_clean
 
 p_osm_all
+
+
+# p_na_all <- bind_rows(lineplots_list, .id = "dataset") %>%
+#   ggplot(aes(time, na_molality, color = dataset, fill = dataset)) +
+#   
+#   geom_ribbon(aes(ymin = na_molality - na_molality_sd,
+#                   ymax = na_molality + na_molality_sd),
+#               alpha = 0.15, color = NA) +
+#   
+#   geom_line(linewidth = 1.1) +
+#   
+#   labs(
+#     x = "time (min)",
+#     y = "Na molality",
+#     color = "Dataset",
+#     fill = "Dataset"
+#   ) +
+#   
+#   scale_x_continuous(expand = c(0, 0)) +
+#   xlim(0, 50) +
+#   theme_clean
+# p_na_all
+# 
+# 
+# df_all <- bind_rows(lineplots_list, .id = "dataset") %>%
+#   mutate(
+#     RH = as.numeric(str_extract(dataset, "\\d+")),
+#     RH = ifelse(dataset == "pbs50", 60, RH)
+#   )
+# 
+# p_overlay_RH <- df_all %>%
+#   ggplot(aes(time)) +
+#   
+#   # Water activity (solid)
+#   geom_line(aes(y = wa, group = dataset, color = dataset),
+#             linewidth = 1.1) +
+#   
+#   # Na molality (dashed, scaled)
+#   geom_line(aes(
+#     y = na_molality / max(na_molality, na.rm = TRUE),
+#     group = dataset,
+#     color = dataset
+#   ),
+#   linewidth = 1.1,
+#   linetype = "dashed") +
+#   
+#   facet_wrap(~RH) +
+#   
+#   scale_y_continuous(
+#     name = bquote(a[w]),
+#     sec.axis = sec_axis(
+#       ~ . * max(df_all$na_molality, na.rm = TRUE),
+#       name = "Na molality"
+#     )
+#   ) +
+#   
+#   labs(
+#     x = "time (min)",
+#     color = "Dataset"
+#   ) +
+#   xlim(0,50) +
+#   
+#   theme_clean
+# 
+# p_overlay_RH
+# 
+# 
+# p_overlay_RH_30_50 <- df_all %>%
+#   filter(RH %in% c(30, 50)) %>%
+#   
+#   ggplot(aes(time)) +
+#   
+#   # Water activity (solid)
+#   geom_line(aes(y = wa, group = dataset, color = dataset),
+#             linewidth = 1.1) +
+#   
+#   # Na molality (dashed, scaled)
+#   geom_line(aes(
+#     y = na_molality / max(na_molality, na.rm = TRUE),
+#     group = dataset,
+#     color = dataset
+#   ),
+#   linewidth = 1.1,
+#   linetype = "dotdash") +
+#   
+#   facet_wrap(~RH) +
+#   
+#   scale_y_continuous(
+#     name = bquote(a[w]),
+#     sec.axis = sec_axis(
+#       ~ . * max(df_all$na_molality, na.rm = TRUE),
+#       name = "Na molality"
+#     )
+#   ) +
+#   
+#   labs(
+#     x = "time (min)",
+#     color = "Dataset"
+#   ) +
+#   
+#   xlim(0, 50) +
+#   theme_clean
+# 
+# p_overlay_RH_30_50
+# 
+# p_m_vs_aw <- df_all %>%
+#   ggplot(aes(na_molality, wa)) +
+#   
+#   geom_line(color = "steelblue", linewidth = 1.1) +
+#   
+#   facet_wrap(~dataset, scales = "free_x") +
+#   
+#   labs(
+#     x = "Na molality",
+#     y = bquote(a[w])
+#   ) +
+#   
+#   theme_clean
+# 
+# p_m_vs_aw
+# 
+# 
+# 
+# p_m_vs_aw_time <- df_all %>%
+#   ggplot(aes(na_molality, wa)) +
+#   
+#   geom_path(linewidth = 1.1) +
+#   
+#   facet_wrap(~dataset, scales = "free_x") +
+#   
+#   
+#   labs(
+#     x = "Na molality",
+#     y = bquote(a[w])
+#   ) +
+#   
+#   theme_clean
+# 
+# p_m_vs_aw_time
+
+
