@@ -10,10 +10,10 @@ OrciD: https://orcid.org/0000-0003-1629-881X
 
 ### Input files for artificial saliva at 50%
 
-- `droplet.dat`
-- `image_size.dat`
-- `parameters.dat`
-- `ML.dat`
+- `droplet.dat` - droplet parameters
+- `image_size.dat` - droplet size from filming
+- `parameters.dat` - model parameters
+- `ML.dat` - chemical species concentration
 
 ### Output ResAM data
 
