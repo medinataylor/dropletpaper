@@ -146,7 +146,7 @@ bacteria_predict <- function(df, step, coeff, threshold = 5) {
     mutate(
       slope = replace_na(lag(osmotic) - osmotic, 0),
       
-      # ✅ ONLY change: per-row threshold, no flattening
+      # per-row threshold, no flattening
       decay = if_else(
         abs(slope) > threshold,
         -(coeff * slope),
