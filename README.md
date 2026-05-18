@@ -17,7 +17,7 @@ OrciD: https://orcid.org/0000-0003-1629-881X
 
 ### Output ResAM data
 
-- `resam_output_droplet.zip`
+- `resam_output_dropletpaper.zip`
   - `as30_ecoli` — artificial saliva droplet at 30% RH
   - `as40_3010` — artificial saliva droplet at 40% RH
   - `as50_0.1x_2909` — 0.1x artificial saliva droplet at 50% RH
